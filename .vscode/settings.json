@@ -1,0 +1,18 @@
+{
+    "terminal.integrated.env.osx": {
+        "PATH": "/Users/jiangyucan/.platformio/penv/bin:/Users/jiangyucan/.platformio/penv:/Library/Frameworks/Python.framework/Versions/3.6/bin:/Library/Frameworks/Python.framework/Versions/2.7/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Tomcat/bin",
+        "PLATFORMIO_CALLER": "vscode"
+    },
+    "files.associations": {
+        "*.wpy": "vue",
+        "sstream": "cpp",
+        "array": "cpp",
+        "deque": "cpp",
+        "list": "cpp",
+        "unordered_map": "cpp",
+        "vector": "cpp",
+        "initializer_list": "cpp",
+        "typeinfo": "cpp",
+        "*.tcc": "cpp"
+    }
+}
