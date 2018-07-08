@@ -1,14 +1,20 @@
 #include <Arduino.h>
-
+#include <string>
 #include <RCSwitch.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include "Bleeper.h"
 
+
+#include <EEPROM.h>
+
+
+
 RCSwitch mySwitch = RCSwitch();
 
 int lightpin=5;
 int doorstatepin=4;
+int cardoorpin=14;
 
 class WifiConfig: public Configuration {
 public:
@@ -52,6 +58,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
 	Serial.println(msg);
   if (_topic==node_cardoor_control_topic){
     Serial.println("cardoor control");
+    mySwitch.send(msg.c_str());
+    client.publish(node_cardoor_state_topic,msg.c_str());
   }else if (_topic==node_light_control_topic){
     Serial.print("light control  ");
     if (msg=="on"){
@@ -86,7 +94,7 @@ int count=0;
 
 void setup() {
 	Serial.begin(115200);
-  mySwitch.enableTransmit(14);
+  mySwitch.enableTransmit(cardoorpin);
   mySwitch.setPulseLength(320);
   Serial.printf("Flash real id:");
 	Serial.println(nodeid);
@@ -120,6 +128,7 @@ void setup() {
 }
 
 void loop() {
+  Bleeper.handle();
   if (!client.connected()) {
     long now = millis();
     if (now - lastReconnectAttempt > 5000) {
