@@ -1,28 +1,24 @@
 #include <Arduino.h>
 #include <string>
-#include <RCSwitch.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include "Bleeper.h"
-
-
+#include <SimpleDHT.h>
 #include <EEPROM.h>
+#include <SoftwareSerial.h>
 
+int pinDHT11 = 4;
+SimpleDHT11 dht11;
 
-
-RCSwitch mySwitch = RCSwitch();
-
-int lightpin=5;
-int doorstatepin=4;
-int cardoorpin=14;
-
-class WifiConfig: public Configuration {
+class WifiConfig : public Configuration
+{
 public:
   persistentStringVar(ssid, "ssid");
   persistentStringVar(password, "password");
 };
 
-class Config: public RootConfiguration {
+class Config : public RootConfiguration
+{
 public:
   stringVar(name, "home-control");
   subconfig(WifiConfig, wifi);
@@ -30,132 +26,117 @@ public:
 
 Config C;
 
-char nodeid[10]="";
-int r1=sprintf(nodeid, "%08X",ESP.getFlashChipId()); 
+char nodeid[10] = "";
+int r1 = sprintf(nodeid, "%08X", ESP.getChipId());
 
-char node_status_topic[30]="";
-int r2=sprintf(node_status_topic, "esp/%08X/ison",ESP.getFlashChipId()); 
-char node_cardoor_control_topic[30]="";
-int r3=sprintf(node_cardoor_control_topic, "esp/%08X/cardoor/control",ESP.getFlashChipId()); 
-char node_light_control_topic[30]="";
-int r4=sprintf(node_light_control_topic, "esp/%08X/light/control",ESP.getFlashChipId()); 
-char node_cardoor_state_topic[30]="";
-int r5=sprintf(node_cardoor_state_topic, "esp/%08X/cardoor/state",ESP.getFlashChipId()); 
-char node_light_state_topic[30]="";
-int r6=sprintf(node_light_state_topic, "esp/%08X/light/state",ESP.getFlashChipId()); 
+char node_heart_topic[30] = "";
+int r7 = sprintf(node_heart_topic, "esp/%08X/heart", ESP.getChipId());
+char node_status_topic[30] = "";
+int r2 = sprintf(node_status_topic, "esp/%08X/ison", ESP.getChipId());
+char node_switch_control_topic[30] = "";
+int r4 = sprintf(node_switch_control_topic, "esp/%08X/ac/control", ESP.getChipId());
+char node_switch_state_topic[30] = "";
+int r6 = sprintf(node_switch_state_topic, "esp/%08X/ac/state", ESP.getChipId());
 ///////////////////////////
 WiFiClient espClient;
-PubSubClient client( espClient);
-void callback(char* topic, byte* payload, unsigned int length) {
-  String _topic=topic;
-	Serial.print("msg from topic: ");
-	Serial.print(topic);
+PubSubClient client(espClient);
+void callback(char *topic, byte *payload, unsigned int length)
+{
+  String _topic = topic;
+  Serial.print("msg from topic: ");
+  Serial.print(topic);
   Serial.print(" payload: ");
-  String msg="";
-  for (int i=0;i<length;i++) {
-    msg+=(char)payload[i];
+  String msg = "";
+  for (int i = 0; i < length; i++)
+  {
+    msg += (char)payload[i];
   }
-	Serial.println(msg);
-  if (_topic==node_cardoor_control_topic){
-    Serial.println("cardoor control");
-    mySwitch.send(msg.c_str());
-    client.publish(node_cardoor_state_topic,msg.c_str());
-  }else if (_topic==node_light_control_topic){
-    Serial.print("light control  ");
-    if (msg=="on"){
-      Serial.println("on");
-      digitalWrite(lightpin,HIGH);
-      client.publish(node_light_state_topic,"on");
-    }else {
-      Serial.println("off");
-      digitalWrite(lightpin,LOW);
-      client.publish(node_light_state_topic,"off");
-    }
+  Serial.println(msg);
+  if (_topic == node_switch_control_topic)
+  {
+    Serial.print("switch control  ");
+    
+  }
+  else if (_topic == node_heart_topic)
+  {
+    int newval = msg.toInt() + 8;
+    char *_newval;
+    sprintf(_newval, "%d", newval);
+    client.publish(node_status_topic, _newval);
   }
 }
 
-
-
-boolean reconnect() {
-  if (client.connect("apcan_home_node", "esp", "esp8266")) {
-      client.publish(node_status_topic,"online");
-      Serial.println(node_status_topic);
-      client.subscribe(node_cardoor_control_topic);
-      Serial.println(node_cardoor_control_topic);
-      client.subscribe(node_light_control_topic);
-      Serial.println(node_light_control_topic);
+boolean reconnect()
+{
+  if (client.connect(nodeid, "", ""))
+  {
+    client.subscribe(node_heart_topic);
+    client.publish(node_status_topic, "online");
+    Serial.println(node_status_topic);
+    client.subscribe(node_switch_control_topic);
+    Serial.println(node_switch_control_topic);
   }
   return client.connected();
 }
 
-
 long lastReconnectAttempt = 0;
-int count=0;
+int count = 0;
 
-void setup() {
-	Serial.begin(115200);
-  mySwitch.enableTransmit(cardoorpin);
-  mySwitch.setPulseLength(320);
+void setup()
+{
+  Serial.begin(115200);
   Serial.printf("Flash real id:");
-	Serial.println(nodeid);
-
-  //light_pin_init
-  pinMode(lightpin,OUTPUT);
-  digitalWrite(lightpin,LOW);
-  //door_state_pin_init
-  pinMode(doorstatepin,INPUT_PULLUP);
-
+  Serial.println(nodeid);
   Bleeper
-    .verbose()
-    .configuration
+      .verbose()
+      .configuration
       .set(&C)
       .done()
-    .configurationInterface
+      .configurationInterface
       .addDefaultWebServer()
       .done()
-    .connection
-      .setSingleConnectionFromPriorityList({
-          new Wifi(&C.wifi.ssid, &C.wifi.password),
-          new AP() 
-      })
+      .connection
+      .setSingleConnectionFromPriorityList({new Wifi(&C.wifi.ssid, &C.wifi.password),
+                                            new AP()})
       .done()
-    .storage
-      .setDefault() 
+      .storage
+      .setDefault()
       .done()
-    .init();
-    client.setServer("apcan.cn", 1883);
-    client.setCallback(callback);
+      .init();
+  client.setServer("apcan.cn", 1883);
+  client.setCallback(callback);
 }
 
-void loop() {
+float hnow = 0;
+float tnow = 0;
+
+void loop()
+{
   Bleeper.handle();
-  if (!client.connected()) {
+  if (!client.connected())
+  {
     long now = millis();
-    if (now - lastReconnectAttempt > 5000) {
+    if (now - lastReconnectAttempt > 5000)
+    {
       Serial.println("mqtt now start to connecting.");
       lastReconnectAttempt = now;
-      // Attempt to reconnect
-      if (reconnect()) {
-        lastReconnectAttempt = 0;
-      }
-    }else {
       Serial.print(".");
-    }
-  } else {
-    client.loop();
-    long now = millis();
-    if (now - lastReconnectAttempt > 5000) {
-      lastReconnectAttempt = now;
-      count++;
-      if (digitalRead(doorstatepin)==LOW){
-        client.publish(node_cardoor_state_topic,"open");
-      }else{
-        client.publish(node_cardoor_state_topic,"closed");
-      }
-      if (count==10){
+      if (reconnect())
+      {
         lastReconnectAttempt = 0;
       }
     }
   }
+  else
+  {
+    client.loop();
+    long now = millis();
+    byte temperature = 0;
+    byte humidity = 0;
+    dht11.read(pinDHT11, &temperature, &humidity, NULL);
+    Serial.print((int)temperature);
+    Serial.print(" *C, ");
+    Serial.print((int)humidity);
+    Serial.println(" H");
+  }
 }
-

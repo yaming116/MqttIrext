@@ -1,0 +1,32 @@
+{
+    "name": "Bleeper", 
+    "repository": {
+        "url": "https://github.com/neman-io/Bleeper.git", 
+        "type": "git"
+    }, 
+    "platforms": [
+        "espressif32", 
+        "espressif8266"
+    ], 
+    "frameworks": [
+        "arduino"
+    ], 
+    "version": "1.0.3", 
+    "authors": [
+        {
+            "maintainer": false, 
+            "name": "neman.io", 
+            "url": "https://github.com/neman-io", 
+            "email": null
+        }
+    ], 
+    "keywords": [
+        "web panel", 
+        "connection", 
+        "configuration", 
+        "storage", 
+        "wifi"
+    ], 
+    "id": 1966, 
+    "description": "A library to store generic configurations"
+}
