@@ -7,10 +7,11 @@
 #include <SimpleDHT.h>
 #include <EEPROM.h>
 #include <SoftwareSerial.h>
+#include <ArduinoJson.h>
 
 #define RX 3
 #define TX 1
-#define DHT11 4
+#define DHT11 2
 
 SimpleDHT11 dht11;
 
@@ -26,7 +27,7 @@ public:
 
 class MqttConfig: public Configuration {
 public:
-  persistentStringVar(host, "apcan.cn");
+  persistentStringVar(host, "xxx.cn");
   persistentIntVar(port, 1883);
   persistentStringVar(user, "test");
   persistentStringVar(pass, "111111");
@@ -55,7 +56,7 @@ char node_switch_state_topic[30] = "";
 int r6 = sprintf(node_switch_state_topic, "esp/%08X/ac/state", ESP.getChipId());
 
 char node_th_topic[30] = "";
-int r8 = sprintf(node_switch_state_topic, "esp/%08X/TH", ESP.getChipId());
+int r8 = sprintf(node_th_topic, "esp/%08X/TH", ESP.getChipId());
 
 char node_10_control_topic[30] = "";
 int r10 = sprintf(node_10_control_topic, "esp/%08X/10/control", ESP.getChipId());
@@ -139,6 +140,7 @@ void callback(char *topic, byte *payload, unsigned int length)
 
 long lastReconnectAttempt = 0;
 long lastScheduleTime500 = millis();
+long lastScheduleTime1000 = millis();
 long lastScheduleTime2000 = millis();
 long lastScheduleTime5000 = millis();
 int count = 0;
@@ -211,26 +213,34 @@ boolean reconnect()
 
 byte lastTemperature = 0;
 byte lastHumidity = 0;
+long lastTempUpdateTime = millis();
 void publishTemp() {
   byte temperature = 0;
   byte humidity = 0;
   dht11.read(DHT11, &temperature, &humidity, NULL);
-
-  if (temperature == lastTemperature && humidity == lastHumidity) return;
+  long now = millis();
+  if (now - lastTempUpdateTime < 30000) {
+    if (temperature == lastTemperature && humidity == lastHumidity) return;
+  }else {
+    lastTempUpdateTime = now;
+  }
+  if (temperature == 0 || humidity == 0) return;
+  lastTemperature = temperature;
+  lastHumidity = humidity;
   Serial.print((int)temperature); 
   Serial.print(" *C, "); 
   Serial.print((int)humidity); 
   Serial.println(" H");
 
   //mqtt publish
-  // StaticJsonBuffer<50> jsonBuffer;
-  // JsonObject& root = jsonBuffer.createObject();
-  // root["temperature"] = (int)temperature;
-  // root["thumidityime"] = (int)humidity;
-  // String output;
-  // root.printTo(output);
-  // const char *res = output.c_str();
-  // client.publish(node_th_topic, res);
+  StaticJsonBuffer<50> jsonBuffer;
+  JsonObject& root = jsonBuffer.createObject();
+  root["temperature"] = (int)temperature;
+  root["thumidityime"] = (int)humidity;
+  String output;
+  root.printTo(output);
+  const char *res = output.c_str();
+  client.publish(node_th_topic, res);
 
 
 
@@ -247,12 +257,25 @@ void schedule500() {
 
 }
 
+void schedule1000() {
+  long now = millis();
+
+  if ((now - lastScheduleTime1000) < 500) return;
+  lastScheduleTime1000 = now;
+  // 
+  Serial.println("lastScheduleTime1000");
+  publishTemp();
+
+
+}
+
 void schedule2000() {
   long now = millis();
   if ((now - lastScheduleTime2000) < 2000) return;
   lastScheduleTime2000 = now;
   // 
   Serial.println("schedule2000");
+  
   
 }
 
@@ -278,6 +301,7 @@ void connectMqtt() {
     }
   }else {
     schedule2000();
+    schedule1000();
     schedule500();
     schedule5000();
     client.loop();
@@ -296,6 +320,12 @@ void loop()
     connectMqtt();
   }else {
     delay(500);
+    if (swSer.available()) {
+      Serial.write(swSer.read());
+    }
+    if (Serial.available()) {
+      swSer.write(Serial.read());
+    }
     Serial.println("Wifi is not connect");
   }
 }
