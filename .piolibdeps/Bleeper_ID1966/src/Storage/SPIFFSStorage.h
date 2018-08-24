@@ -3,7 +3,7 @@
 #include "Helpers/Logger.h"
 #include "Helpers/utils.h"
 
-#define CONFIGS_FILE "/bleeperVars.bpr"
+#define CONFIGS_FILE "/bleeperVars.bpr1"
 
 #ifdef ESP8266
 #include "FS.h"
