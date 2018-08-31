@@ -45,14 +45,11 @@ static t_remote_ac_status ac_status =
 #define DHT11 2
 SimpleDHT11 dht11;
 
-
-
 /**
 说明：保存设置
 返回值：保存成功返回true, 否则返回false
 */
 boolean saveSettings();
-
 
 /**
 说明：提取设置
@@ -65,6 +62,27 @@ boolean getSettings();
 参数：文件id
 返回值：下载成功返回true, 否则返回false
 */
+boolean downLoadFile(int index_id);
+
+/**
+ * 
+ * 数据转换
+ */
+int coverToEnum(String str, String type);
+
+/**
+ *发送红外 
+ */
+boolean sendIR();
+
+/**
+ * mqtt callback
+ */
+void callback(char *topic, byte *payload, unsigned int length);
+
+/**
+ * 下载固件
+ */
 boolean downLoadFile(int index_id);
 
 class WifiConfig : public Configuration
@@ -96,14 +114,15 @@ Config C;
 char nodeid[10] = "";
 int r1 = sprintf(nodeid, "%08X", ESP.getChipId());
 
+char node_toast[30] = "esp/nomal/toast";
+
 char node_heart_topic[30] = "";
 int r7 = sprintf(node_heart_topic, "esp/%08X/heart", ESP.getChipId());
-char node_status_topic[30] = "";
-int r2 = sprintf(node_status_topic, "esp/%08X/ison", ESP.getChipId());
-char node_switch_control_topic[30] = "";
-int r4 = sprintf(node_switch_control_topic, "esp/%08X/ac/control", ESP.getChipId());
-char node_switch_state_topic[30] = "";
-int r6 = sprintf(node_switch_state_topic, "esp/%08X/ac/state", ESP.getChipId());
+char node_state_topic[30] = "";
+int r6 = sprintf(node_state_topic, "esp/%08X/state", ESP.getChipId());
+
+char node_info_topic[30] = "";
+int r4 = sprintf(node_info_topic, "esp/%08X/info", ESP.getChipId());
 
 char node_th_topic[30] = "";
 int r8 = sprintf(node_th_topic, "esp/%08X/TH", ESP.getChipId());
@@ -121,134 +140,6 @@ int r14 = sprintf(node_fan_set_topic, "esp/%08X/fan/set", ESP.getChipId());
 
 ///////////////////////////
 
-int coverToEnum(String str, String type) {
-	String swing_str[] = { "True", "False" };
-	String swing_speed_str[] = { "auto", "low", "medium", "high" };
-	String mode_str[] = { "cool", "heat", "auto", "fan", "dry" };
-	if (type == "mode")
-		for (int i = 0; i < sizeof(mode_str) / sizeof(mode_str[0]); i++) {
-			if (str == mode_str[i])	return i;
-		}
-
-	if (type == "swind")
-		for (int i = 0; i < sizeof(swing_str) / sizeof(swing_str[0]); i++) {
-			if (str == swing_str[i])	return i;
-		}
-	if (type == "swind_speed")
-		for (int i = 0; i < sizeof(swing_speed_str) / sizeof(swing_speed_str[0]); i++) {
-			if (str == swing_speed_str[i])	return i;
-		}
-}
-
-boolean sendIR() {
-
-	String filename = settings_json["use_file"];
-	String tmp = settings_json["data_pin"];
-	int data_pin = tmp.toInt();
-	IRsend irsend = IRsend(data_pin);
-	irsend.begin();
-	if (SPIFFS.exists(filename)) {
-		File f = SPIFFS.open(filename, "r");
-		File *fp = &f;
-		if (f) {
-			UINT16 content_length = f.size();
-			if (content_length == 0) {
-				return false;
-			}
-			SERIAL_DEBUG.printf("content_length = %d\n", content_length);
-			UINT8 *content = (UINT8 *)malloc(content_length * sizeof(UINT8));
-			f.seek(0L, fs::SeekSet);
-			f.readBytes((char*)content, content_length);
-			INT8 ret = ir_binary_open(IR_CATEGORY_AC, 1, content, content_length);
-			int length = ir_decode(2, user_data, &ac_status, 0);
-			SERIAL_DEBUG.println();
-			for (int i = 0; i < length; i++) {
-				Serial.printf("%d ", user_data[i]);
-			}
-			SERIAL_DEBUG.println();
-			irsend.sendRaw(user_data, length, 38);
-			ir_close();
-			return true;
-		}
-		else {
-			SERIAL_DEBUG.printf("open %s was failed\n", filename.c_str());
-			return false;
-		}
-		f.close();
-	}
-	else {
-		SERIAL_DEBUG.printf("%s is not exsits\n", filename.c_str());
-		return false;
-	}
-}
-
-WiFiClient espClient;
-PubSubClient client(espClient);
-void callback(char *topic, byte *payload, unsigned int length)
-{
-  String _topic = topic;
-  Serial.print("msg from topic: ");
-  Serial.print(topic);
-  Serial.print(" payload: ");
-
-  String cmd = "";
-	for (int i = 0; i < length; i++)
-		cmd += (char)payload[i];
-
-	String topic_str = String(topic);
-  Serial.print(cmd);
-  Serial.println();
-  if (topic_str == node_study_topic) {
-    // pin
-    // index
-   
-    JsonObject& object = jsonBuffer.parse(cmd);
-    if (object.containsKey("data_pin")) {
-			settings_json["data_pin"] = object["data_pin"];
-		}
-		if (object.containsKey("use_file")) {
-			settings_json["use_file"] = object["use_file"];
-      downLoadFile(object["use_file"]);
-		}
-    saveSettings();
-
-    return;
-  }
-
-	if (topic_str == node_mode_set_topic && (cmd == "False")) {
-		ac_status.ac_power = AC_POWER_OFF;
-	}
-	else {
-		ac_status.ac_power = AC_POWER_ON;
-	}
-	if (topic_str == node_temperature_set_topic) {
-		int tmp = cmd.toInt();
-		t_ac_temperature temperature = t_ac_temperature(tmp - 16);
-		ac_status.ac_temp = temperature;
-	}
-	if (topic_str == node_mode_set_topic && (cmd != "False")) {
-		ac_status.ac_mode = (t_ac_mode)(coverToEnum(cmd, "mode"));
-	}
-	if (topic_str == node_swing_set_topic) {
-		ac_status.ac_wind_dir = (t_ac_swing)(coverToEnum(cmd, "swind"));
-	}
-	if (topic_str == node_fan_set_topic) {
-		ac_status.ac_wind_speed = (t_ac_wind_speed)(coverToEnum(cmd, "swind_speed"));
-	}
-
-	sendIR();
-	SERIAL_DEBUG.println("***   ac_status   ***");
-	SERIAL_DEBUG.printf("power = %d\n", ac_status.ac_power);
-	SERIAL_DEBUG.printf("temperature = %d\n", ac_status.ac_temp);
-	SERIAL_DEBUG.printf("swing = %d\n", ac_status.ac_wind_dir);
-	SERIAL_DEBUG.printf("speed = %d\n", ac_status.ac_wind_speed);
-	SERIAL_DEBUG.printf("mode = %d\n", ac_status.ac_mode);
-	SERIAL_DEBUG.println("**********************");
-
-}
-
-
-
 long lastReconnectAttempt = 0;
 long lastScheduleTime500 = millis();
 long lastScheduleTime1000 = millis();
@@ -257,13 +148,11 @@ long lastScheduleTime5000 = millis();
 int count = 0;
 const char *user = (&C.mqtt.user)->c_str();
 const char *pass = (&C.mqtt.pass)->c_str();
-#define RECV_PIN 14
+const char *host = (&C.mqtt.host)->c_str();
 
-#define BAUD_RATE 115200
-#define CAPTURE_BUFFER_SIZE 1024
-#define TIMEOUT 50U 
-IRrecv irrecv(RECV_PIN, CAPTURE_BUFFER_SIZE, TIMEOUT, true);
-decode_results results; 
+WiFiClient espClient;
+PubSubClient client(espClient);
+
 void setup()
 {
   Serial.begin(115200);
@@ -292,7 +181,6 @@ void setup()
       .done()
       .init();
 
-  const char *host = (&C.mqtt.host)->c_str();
   uint16_t port = (uint16_t)C.mqtt.port;
   Serial.println(host);
   Serial.println(port);
@@ -301,12 +189,11 @@ void setup()
   client.setServer(host, port);
   client.setCallback(callback);
 
-  if (getSettings() == true) {
-		SERIAL_DEBUG.println("get settings_json");
-		settings_json.printTo(SERIAL_DEBUG);
-	}
-
-  irrecv.enableIRIn(); 
+  if (getSettings() == true)
+  {
+    SERIAL_DEBUG.println("get settings_json");
+    settings_json.printTo(SERIAL_DEBUG);
+  }
 }
 
 boolean reconnect()
@@ -315,15 +202,21 @@ boolean reconnect()
   if (client.connect(nodeid, user, pass))
   {
     client.subscribe(node_heart_topic);
-    client.publish(node_status_topic, "online");
-    Serial.println(node_status_topic);
-    client.subscribe(node_switch_control_topic);
+    client.publish(node_state_topic, "online");
+
+    //空调主题
     client.subscribe(node_study_topic);
     client.subscribe(node_fan_set_topic);
     client.subscribe(node_swing_set_topic);
     client.subscribe(node_temperature_set_topic);
     client.subscribe(node_mode_set_topic);
-    Serial.println(node_switch_control_topic);
+
+    client.publish(node_toast, (String(node_heart_topic) + ',' 
+                                + String(node_study_topic) + ',' 
+                                + String(node_fan_set_topic) + ',' 
+                                + String(node_swing_set_topic) + ',' 
+                                + String(node_temperature_set_topic) + ',' 
+                                + String(node_mode_set_topic)).c_str());
   }
   delay(100);
   return client.connected();
@@ -332,6 +225,7 @@ boolean reconnect()
 byte lastTemperature = 0;
 byte lastHumidity = 0;
 long lastTempUpdateTime = millis();
+
 void publishTemp()
 {
   byte temperature = 0;
@@ -484,39 +378,7 @@ boolean downLoadFile(int index_id)
 
   return flag;
 }
-
-
-
-void dump() {
-  if (irrecv.decode(&results)) {
-    // Display a crude timestamp.
-    uint32_t now = millis();
-    Serial.printf("Timestamp : %06u.%03u\n", now / 1000, now % 1000);
-    if (results.overflow)
-      Serial.printf("WARNING: IR code is too big for buffer (>= %d). "
-                    "This result shouldn't be trusted until this is resolved. "
-                    "Edit & increase CAPTURE_BUFFER_SIZE.\n",
-                    CAPTURE_BUFFER_SIZE);
-    // Display the basic output of what we found.
-    Serial.print(resultToHumanReadableBasic(&results));
-    yield();  // Feed the WDT as the text output can take a while to print.
-
-    // Display the library version the message was captured with.
-    Serial.print("Library   : v");
-    Serial.println(_IRREMOTEESP8266_VERSION_);
-    Serial.println();
-
-    // Output RAW timing info of the result.
-    Serial.println(resultToTimingInfo(&results));
-    yield();  // Feed the WDT (again)
-
-    // Output the results as source code
-    Serial.println(resultToSourceCode(&results));
-    Serial.println("");  // Blank line between entries
-    yield();  // Feed the WDT (again)
-  }
-}
-
+bool netRestart = false;
 void loop()
 {
 
@@ -526,47 +388,229 @@ void loop()
   if (isConnected)
   {
     connectMqtt();
-    dump();
+    netRestart = true;
   }
   else
   {
+    if (netRestart)
+    {
+      ESP.restart();
+    }
     delay(500);
     Serial.println("Wifi is not connect");
   }
 }
 
+void callback(char *topic, byte *payload, unsigned int length)
+{
+  String _topic = topic;
+  Serial.print("msg from topic: ");
+  Serial.print(topic);
+  Serial.print(" payload: ");
 
+  String cmd = "";
+  for (int i = 0; i < length; i++)
+    cmd += (char)payload[i];
 
-boolean saveSettings() {
-	File cache = SPIFFS.open("settings", "w");
-	Stream* file_stream = &cache;
-	if (cache) {
-		String tmp;
-		settings_json.printTo(tmp);
-		cache.println(tmp);
-	}
-	else {
-		SERIAL_DEBUG.println("can't open settings");
-		return false;
-	}
-	cache.close();
-	return true;
+  String topic_str = String(topic);
+  Serial.print(cmd);
+  Serial.println();
+  if (topic_str == node_study_topic)
+  {
+    // pin
+    // index
+
+    JsonObject &object = jsonBuffer.parse(cmd);
+    if (object.containsKey("data_pin"))
+    {
+      settings_json["data_pin"] = object["data_pin"];
+    }
+    if (object.containsKey("use_file"))
+    {
+      settings_json["use_file"] = object["use_file"];
+      downLoadFile(object["use_file"]);
+    }
+    saveSettings();
+
+    return;
+  }
+
+  if (topic_str == node_heart_topic)
+  {
+    client.publish(node_state_topic, "online");
+    return;
+  }
+
+  if (topic_str == node_info_topic)
+  {
+    StaticJsonBuffer<1024> jsonBuffer;
+    JsonObject &root = jsonBuffer.createObject();
+    root["data_pin"] = settings_json["data_pin"];
+    root["use_file"] = settings_json["use_file"];
+
+    root["wifi_ssid"] = &C.wifi.ssid;
+    root["wifi_user"] = &C.wifi.password;
+
+    root["mtqq_ip"] = host;
+    root["mtqq_user"] = user;
+    root["mtqq_pass"] = pass;
+
+    String output;
+    root.printTo(output);
+    const char *res = output.c_str();
+    client.publish(node_info_topic, res);
+    return;
+  }
+
+  if (topic_str == node_mode_set_topic && (cmd == "False"))
+  {
+    ac_status.ac_power = AC_POWER_OFF;
+  }
+  else
+  {
+    ac_status.ac_power = AC_POWER_ON;
+  }
+  if (topic_str == node_temperature_set_topic)
+  {
+    int tmp = cmd.toInt();
+    t_ac_temperature temperature = t_ac_temperature(tmp - 16);
+    ac_status.ac_temp = temperature;
+  }
+  if (topic_str == node_mode_set_topic && (cmd != "False"))
+  {
+    ac_status.ac_mode = (t_ac_mode)(coverToEnum(cmd, "mode"));
+  }
+  if (topic_str == node_swing_set_topic)
+  {
+    ac_status.ac_wind_dir = (t_ac_swing)(coverToEnum(cmd, "swind"));
+  }
+  if (topic_str == node_fan_set_topic)
+  {
+    ac_status.ac_wind_speed = (t_ac_wind_speed)(coverToEnum(cmd, "swind_speed"));
+  }
+
+  sendIR();
+  SERIAL_DEBUG.println("***   ac_status   ***");
+  SERIAL_DEBUG.printf("power = %d\n", ac_status.ac_power);
+  SERIAL_DEBUG.printf("temperature = %d\n", ac_status.ac_temp);
+  SERIAL_DEBUG.printf("swing = %d\n", ac_status.ac_wind_dir);
+  SERIAL_DEBUG.printf("speed = %d\n", ac_status.ac_wind_speed);
+  SERIAL_DEBUG.printf("mode = %d\n", ac_status.ac_mode);
+  SERIAL_DEBUG.println("**********************");
 }
 
-boolean getSettings() {
-	File cache = SPIFFS.open("settings", "r");
-	if (cache) {
-		String tmp = cache.readString();
-		JsonObject& json_object = jsonBuffer.parseObject(tmp);
-		JsonObject::iterator it;
-		for (it = json_object.begin(); it != json_object.end(); ++it) {
-			settings_json[it->key] = json_object[it->key];
-		}
-	}
-	else {
-		SERIAL_DEBUG.println("settings is not exits");
-		return false;
-	}
-	cache.close();
-	return true;
+boolean saveSettings()
+{
+  File cache = SPIFFS.open("settings", "w");
+  Stream *file_stream = &cache;
+  if (cache)
+  {
+    String tmp;
+    settings_json.printTo(tmp);
+    cache.println(tmp);
+  }
+  else
+  {
+    SERIAL_DEBUG.println("can't open settings");
+    return false;
+  }
+  cache.close();
+  return true;
+}
+
+boolean getSettings()
+{
+  File cache = SPIFFS.open("settings", "r");
+  if (cache)
+  {
+    String tmp = cache.readString();
+    JsonObject &json_object = jsonBuffer.parseObject(tmp);
+    JsonObject::iterator it;
+    for (it = json_object.begin(); it != json_object.end(); ++it)
+    {
+      settings_json[it->key] = json_object[it->key];
+    }
+  }
+  else
+  {
+    SERIAL_DEBUG.println("settings is not exits");
+    return false;
+  }
+  cache.close();
+  return true;
+}
+
+boolean sendIR()
+{
+
+  String filename = settings_json["use_file"];
+  String tmp = settings_json["data_pin"];
+  int data_pin = tmp.toInt();
+  IRsend irsend = IRsend(data_pin);
+  irsend.begin();
+  if (SPIFFS.exists(filename))
+  {
+    File f = SPIFFS.open(filename, "r");
+    File *fp = &f;
+    if (f)
+    {
+      UINT16 content_length = f.size();
+      if (content_length == 0)
+      {
+        return false;
+      }
+      SERIAL_DEBUG.printf("content_length = %d\n", content_length);
+      UINT8 *content = (UINT8 *)malloc(content_length * sizeof(UINT8));
+      f.seek(0L, fs::SeekSet);
+      f.readBytes((char *)content, content_length);
+      INT8 ret = ir_binary_open(IR_CATEGORY_AC, 1, content, content_length);
+      int length = ir_decode(2, user_data, &ac_status, 0);
+      SERIAL_DEBUG.println();
+      for (int i = 0; i < length; i++)
+      {
+        Serial.printf("%d ", user_data[i]);
+      }
+      SERIAL_DEBUG.println();
+      irsend.sendRaw(user_data, length, 38);
+      ir_close();
+      return true;
+    }
+    else
+    {
+      SERIAL_DEBUG.printf("open %s was failed\n", filename.c_str());
+      return false;
+    }
+    f.close();
+  }
+  else
+  {
+    SERIAL_DEBUG.printf("%s is not exsits\n", filename.c_str());
+    return false;
+  }
+}
+
+int coverToEnum(String str, String type)
+{
+  String swing_str[] = {"True", "False"};
+  String swing_speed_str[] = {"auto", "low", "medium", "high"};
+  String mode_str[] = {"cool", "heat", "auto", "fan", "dry"};
+  if (type == "mode")
+    for (int i = 0; i < sizeof(mode_str) / sizeof(mode_str[0]); i++)
+    {
+      if (str == mode_str[i])
+        return i;
+    }
+
+  if (type == "swind")
+    for (int i = 0; i < sizeof(swing_str) / sizeof(swing_str[0]); i++)
+    {
+      if (str == swing_str[i])
+        return i;
+    }
+  if (type == "swind_speed")
+    for (int i = 0; i < sizeof(swing_speed_str) / sizeof(swing_speed_str[0]); i++)
+    {
+      if (str == swing_speed_str[i])
+        return i;
+    }
 }
