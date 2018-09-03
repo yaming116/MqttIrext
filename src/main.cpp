@@ -148,7 +148,7 @@ long lastScheduleTime5000 = millis();
 int count = 0;
 const char *user = (&C.mqtt.user)->c_str();
 const char *pass = (&C.mqtt.pass)->c_str();
-const char *host = (&C.mqtt.host)->c_str();
+String mqttHost = "";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -182,6 +182,8 @@ void setup()
       .init();
 
   uint16_t port = (uint16_t)C.mqtt.port;
+  const char *host = (&C.mqtt.host)->c_str();
+  mqttHost = String(host);
   Serial.println(host);
   Serial.println(port);
   Serial.println(user);
@@ -211,12 +213,14 @@ boolean reconnect()
     client.subscribe(node_temperature_set_topic);
     client.subscribe(node_mode_set_topic);
 
-    client.publish(node_toast, (String(node_heart_topic) + ',' 
-                                + String(node_study_topic) + ',' 
-                                + String(node_fan_set_topic) + ',' 
-                                + String(node_swing_set_topic) + ',' 
-                                + String(node_temperature_set_topic) + ',' 
-                                + String(node_mode_set_topic)).c_str());
+    client.publish(node_toast, node_heart_topic);
+
+    Serial.println(node_study_topic);
+    Serial.println(node_fan_set_topic);
+    Serial.println(node_swing_set_topic);
+    Serial.println(node_temperature_set_topic);
+    Serial.println(node_mode_set_topic);
+
   }
   delay(100);
   return client.connected();
@@ -366,6 +370,7 @@ boolean downLoadFile(int index_id)
       http.writeToStream(filestream);
       SERIAL_DEBUG.printf("download %s ok\n", filename.c_str());
       flag = true;
+       client.publish(node_toast, "download is ok");
     }
     else
     {
@@ -379,6 +384,8 @@ boolean downLoadFile(int index_id)
   return flag;
 }
 bool netRestart = false;
+const long lastUnConnectTime = millis();
+const long min_5 = 1000 * 60 * 5;
 void loop()
 {
 
@@ -392,11 +399,19 @@ void loop()
   }
   else
   {
+    
+    delay(500);
     if (netRestart)
     {
       ESP.restart();
+      return;
     }
-    delay(500);
+
+    if(millis() - lastUnConnectTime > min_5) {
+      ESP.restart();
+      return;
+    }
+
     Serial.println("Wifi is not connect");
   }
 }
@@ -451,7 +466,7 @@ void callback(char *topic, byte *payload, unsigned int length)
     root["wifi_ssid"] = &C.wifi.ssid;
     root["wifi_user"] = &C.wifi.password;
 
-    root["mtqq_ip"] = host;
+    root["mtqq_ip"] = mqttHost;
     root["mtqq_user"] = user;
     root["mtqq_pass"] = pass;
 
