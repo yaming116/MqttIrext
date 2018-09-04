@@ -345,6 +345,7 @@ boolean downLoadFile(int index_id)
   String filename = String(index_id);
   if (SPIFFS.exists(filename))
   {
+    client.publish(node_toast, "download is ok");
     SERIAL_DEBUG.println("already have file");
     return true;
   }
@@ -370,7 +371,7 @@ boolean downLoadFile(int index_id)
       http.writeToStream(filestream);
       SERIAL_DEBUG.printf("download %s ok\n", filename.c_str());
       flag = true;
-       client.publish(node_toast, "download is ok");
+      client.publish(node_toast, "download is ok");
     }
     else
     {
