@@ -6,17 +6,18 @@
 #include <ESP8266WiFi.h>
 #include <SimpleDHT.h>
 #include <EEPROM.h>
-#include <SoftwareSerial.h>
+#include <IRremoteESP8266.h>
+#include <IRsend.h>
 #include <ArduinoJson.h>
 
-#define RX 3
-#define TX 1
-#define DHT11 2
 
+#define DHT11 2
 SimpleDHT11 dht11;
 
-SoftwareSerial swSer(RX, TX, false, 256);
-byte open[300] = {0xA1, 0xF1,0x01,0xFB,0x08};
+uint16_t open[300] = {0xA1, 0xF1,0x01,0xFB,0x08};
+
+int acswitchpin=2;
+IRsend irsend(acswitchpin);
 
 class WifiConfig : public Configuration
 {
@@ -46,6 +47,8 @@ Config C;
 char nodeid[10] = "";
 int r1 = sprintf(nodeid, "%08X", ESP.getChipId());
 
+char node_toast[30] = "esp/nomal/toast";
+
 char node_heart_topic[30] = "";
 int r7 = sprintf(node_heart_topic, "esp/%08X/heart", ESP.getChipId());
 char node_status_topic[30] = "";
@@ -63,42 +66,6 @@ int r10 = sprintf(node_10_control_topic, "esp/%08X/10/control", ESP.getChipId())
 char node_16_control_topic[30] = "";
 int r16 = sprintf(node_16_control_topic, "esp/%08X/16/control", ESP.getChipId());
 ///////////////////////////
-
-void ShowCommand(int index)  {
-  Serial.print(millis());
-  Serial.print(" OUT>>");
-  for (int i = 0; i < index; i++) {
-    Serial.print( (open[i] < 0x10 ? " 0" : " "));
-    Serial.print(open[i], HEX);
-  }
-  Serial.println();
-}
-
-void checkReturn() {
-  if (swSer.available()) {
-    Serial.print(millis());
-    Serial.print(" IN>>>");
-    while (swSer.available()) {
-      byte ch =  (byte) swSer.read();
-      Serial.print((ch < 0x10 ? " 0" : " "));
-      Serial.print(ch, HEX);
-    }
-    Serial.println();
-  }
-}
-
-void SendCommand(bool checkResult, int index) {
-  ShowCommand(index);
-  //串口
-  swSer.begin(9600);
-  pinMode(RX, INPUT);
-  pinMode(TX, OUTPUT);
-
- 
-  swSer.write(open, index);
-  swSer.flush();
-  if (checkResult) checkReturn();
-}
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -133,7 +100,8 @@ void callback(char *topic, byte *payload, unsigned int length)
       command = strtok(NULL, delimiter);
       index ++;
     }
-    SendCommand(true, index);
+    irsend.sendRaw(open, 300, 38);
+    //如果需要添加反馈代码这里添加即可
   }
 
 }
@@ -155,10 +123,6 @@ void setup()
 
   Serial.printf("Flash real id:");
   Serial.println(nodeid);
-  
-  swSer.begin(9600);
-  pinMode(RX, INPUT);
-  pinMode(TX, OUTPUT);
 
   Bleeper
       .verbose()
@@ -198,6 +162,7 @@ boolean reconnect()
     client.subscribe(node_switch_control_topic);
     client.subscribe(node_10_control_topic);
     client.subscribe(node_16_control_topic);
+    client.publish(node_toast, node_heart_topic);
     Serial.println(node_switch_control_topic);
     Serial.println(node_10_control_topic);
     Serial.println(node_16_control_topic);
@@ -254,7 +219,6 @@ void schedule500() {
   // 
   Serial.println("schedule500");
 
-
 }
 
 void schedule1000() {
@@ -300,16 +264,18 @@ void connectMqtt() {
       }
     }
   }else {
-    schedule2000();
-    schedule1000();
-    schedule500();
-    schedule5000();
+    // schedule2000();
+    // schedule1000();
+    // schedule500();
+    // schedule5000();
     client.loop();
     
   }
 }
 
-
+bool netRestart = false;
+const long lastUnConnectTime = millis();
+const long min_5 = 1000 * 60 * 5;
 void loop()
 {
   
@@ -318,15 +284,20 @@ void loop()
   bool isConnected = (status == WL_CONNECTED);
   if (isConnected) {
     connectMqtt();
+    netRestart = true;
   }else {
     delay(500);
-    if (swSer.available()) {
-      Serial.write(swSer.read());
+    if (netRestart)
+    {
+      ESP.restart();
+      return;
     }
-    if (Serial.available()) {
-      swSer.write(Serial.read());
+
+    if(millis() - lastUnConnectTime > min_5) {
+      ESP.restart();
+      return;
     }
+    
     Serial.println("Wifi is not connect");
   }
 }
-
